@@ -1,0 +1,33 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "files.associations": {
+            "main.h": "c",
+            "ads1256.h": "c",
+            "usart.h": "c",
+            "stm32f4xx.h": "c",
+            "fuzzypid.h": "c",
+            "tim.h": "c",
+            "rtthread.h": "c",
+            "rthw.h": "c",
+            "stm32f4xx_hal.h": "c",
+            "gpio.h": "c",
+            "delay.h": "c",
+            "math.h": "c",
+            "filter.h": "c",
+            "finsh.h": "c"
+        }
+    },
+    "extensions": {},
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            
+
+        ]
+    }
+}
