@@ -426,8 +426,10 @@ static void pwm_thread_entry(void *parameter)
       pwm_data = (pwm_data_t*)msg;
       
       // 使用接收到的PWM数据设置比较值
-      __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_1, pwm_data->fan_output);//min:14  max:50
-      __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_2, pwm_data->teg_output);//  
+      // __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_1, pwm_data->fan_output);//min:14  max:50
+      // __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_2, pwm_data->teg_output);//  
+      __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_1, 32768);//min:32768  max:65535//绿电容
+      __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_2, 32768);//  
 
       // 释放内存
       rt_free(pwm_data);

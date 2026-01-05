@@ -82,9 +82,9 @@ void rt_hw_board_init(void)
     ADS1256_CfgADC(PGA_1, DATARATE_100);
 
     MX_USART1_UART_Init();
+    MX_SPI1_Init();
     MX_TIM2_Init();
     MX_TIM3_Init();
-    MX_SPI1_Init();
 
     ips200_init ();
 
@@ -139,13 +139,13 @@ void rt_hw_board_init(void)
                                     1,  4,  8,  0,
                                     4,  8,  8,  0};
   // Default parameters of pid controller
-  float fuzzy_pid_params[DOF][pid_params_count] = {{20.4f,   0,     0,    5,     0.1f, 0, 1},//kp, ki, kd, integral_limit, dead_zone, feed_forward,
+  float fuzzy_pid_params[DOF][pid_params_count] = {{2000.0f,   50.0f,     500,    5000,     0.1f, 0, 1},//kp, ki, kd, integral_limit, dead_zone, feed_forward,
                                                    {4.0f,   0,     0,    5,     0.1f, 0, 1},
                                                    {1.1f,   0,     0,    0,     0,    0, 1},
                                                    {2.4f,   0,     0,    0,     0,    0, 1},
                                                    {1.2f,   0,     0,    0,     0,    0, 1},
                                                    {1.2f,   0,     0,    0,     0,    0, 1}};
-  float pid_params[DOF][pid_params_count] = {{10.2f,   0,     0,    5,     0.1f, 0, 1}};
+  float pid_params[DOF][pid_params_count] = {{1000.0f,   20.0f,     0,    10000,     0.5f, 0, 1}};
   // Obtain the PID controller vector according to the parameters
   fuzzy_pid_vector = fuzzy_pid_vector_init(
                     fuzzy_pid_params,  

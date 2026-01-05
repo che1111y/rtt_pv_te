@@ -110,12 +110,12 @@ struct PID {
 #endif
 
 #define min_fuzzy_pwm_output 0
-#define middle_fuzzy_pwm_output 25
-#define max_fuzzy_pwm_output 50
+#define middle_fuzzy_pwm_output 5000
+#define max_fuzzy_pwm_output 10000
 
 #define min_pwm_output 0
-#define middle_pwm_output 25
-#define max_pwm_output 50
+#define middle_pwm_output 5000
+#define max_pwm_output 10000
 
 struct fuzzy *fuzzy_init(unsigned int input_num, unsigned int output_num);
 
