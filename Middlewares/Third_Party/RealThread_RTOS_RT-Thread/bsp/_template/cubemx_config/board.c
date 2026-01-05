@@ -100,7 +100,7 @@ void rt_hw_board_init(void)
     HAL_GPIO_WritePin(GPIOF, GPIO_PIN_11, GPIO_PIN_RESET);
 
     control_fan = 0; 
-    control_teg = 1;
+    control_teg = 0;
     idea_temp_cold = 15.0f;
     idea_temp_hot = idea_temp_cold*1.2f;
 
