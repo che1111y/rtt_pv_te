@@ -101,7 +101,7 @@ void rt_hw_board_init(void)
 
     control_fan = 0; 
     control_teg = 0;
-    idea_temp_cold = 15.0f;
+    idea_temp_cold = 20.0f;
     idea_temp_hot = idea_temp_cold*1.2f;
 
     // Default fuzzy rule base of delta kp/ki/kd

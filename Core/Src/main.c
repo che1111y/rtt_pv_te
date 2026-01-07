@@ -45,7 +45,6 @@ static  rt_thread_t pwm_thread = RT_NULL;
 /* 定义邮箱控制块 */
 static rt_mailbox_t temp_mail = RT_NULL;
 static rt_mailbox_t pwm_mail = RT_NULL;
-static rt_mailbox_t display_mail = RT_NULL;
 
 //任务
 static void adc_thread_entry(void *parameter);
@@ -76,6 +75,12 @@ typedef struct {
     int fan_pwm;
     int teg_pwm;
 } display_data_t;
+
+/* 定义互斥量用于显示数据的同步 */
+static rt_mutex_t display_mutex = RT_NULL;
+// 定义全局显示数据结构
+static display_data_t global_display_data;
+static rt_bool_t display_data_ready = RT_FALSE;
 
 /* USER CODE END PD */
 
@@ -127,12 +132,11 @@ int main(void)
   if (pwm_mail != RT_NULL)
     rt_kprintf("PWM data mailbox created successfully\n\r");
 
-  /* 创建屏幕显示邮箱 */
-  display_mail = rt_mb_create("display_mail", /* 邮箱名字 */
-                            20,         /* 邮箱大小 */
-                            RT_IPC_FLAG_FIFO);/* 信号量模式 FIFO(0x00)*/
-  if (display_mail != RT_NULL)
-    rt_kprintf("Display data mailbox created successfully\n\r");
+  // 创建互斥量
+  display_mutex = rt_mutex_create("disp_mutex", RT_IPC_FLAG_FIFO);
+  // 初始化全局显示数据
+  rt_memset(&global_display_data, 0, sizeof(display_data_t));
+  display_data_ready = RT_FALSE;
 
   //初始化adc线程
 	adc_thread =                           /* 线程控制块指针 */   
@@ -282,7 +286,7 @@ static void adc_thread_entry(void *parameter)
       rt_kprintf("ADC Mailbox send failed!\n");
       rt_free(temp_msg);  // 发送失败时释放内存
     }
-    // rt_thread_mdelay(50);
+    rt_thread_mdelay(50);
 	}
 }
 
@@ -300,7 +304,7 @@ static void wifi_thread_entry(void *parameter)
 static void scrn_thread_entry(void *parameter)
 {
   rt_kprintf("scrn thread started!\n\r");  // 添加启动确认
-  display_data_t *disp_data;
+  display_data_t local_display_data;
   rt_ubase_t msg;
     
   // 画好所有的标签（只画一次）
@@ -318,27 +322,38 @@ static void scrn_thread_entry(void *parameter)
 
 	while(1)
 	{
-    // 从邮箱接收显示数据
-    if(rt_mb_recv(display_mail, &msg, RT_WAITING_FOREVER) == RT_EOK)
+    // 使用互斥量保护共享数据的访问
+    if(rt_mutex_take(display_mutex, RT_WAITING_FOREVER) == RT_EOK)
     {
-      disp_data = (display_data_t*)msg;
-
-      //显示温度数据
-      char temp_str[32];
-      for(int i = 0; i < 8; i++) {
-        snprintf(temp_str, sizeof(temp_str), "Temp%d: %.2f C", i, disp_data->temp_values[i]);
-        ips200_show_string(10, 10 + i*20, temp_str);
+      // 检查是否有新数据可用
+      if(display_data_ready == RT_TRUE)
+      {
+        // 复制数据到本地变量
+        rt_memcpy(&local_display_data, &global_display_data, sizeof(display_data_t));
+        display_data_ready = RT_FALSE; // 标记数据已被读取
+        
+        // 释放互斥量
+        rt_mutex_release(display_mutex);
+        
+        // 显示温度数据
+        char temp_str[32];
+        for(int i = 0; i < 8; i++) {
+          snprintf(temp_str, sizeof(temp_str), "Temp%d: %.2f C", i, local_display_data.temp_values[i]);
+          ips200_show_string(10, 10 + i*20, temp_str);
+        }
+        
+        // 显示PWM数据
+        char fan_str[32], teg_str[32];
+        snprintf(fan_str, sizeof(fan_str), "Fan PWM: %d", local_display_data.fan_pwm);
+        snprintf(teg_str, sizeof(teg_str), "TEG PWM: %d", local_display_data.teg_pwm);
+        ips200_show_string(10, 180, fan_str);
+        ips200_show_string(10, 200, teg_str);
       }
-      
-      //显示PWM数据
-      char fan_str[32], teg_str[32];
-      snprintf(fan_str, sizeof(fan_str), "Fan PWM: %d", disp_data->fan_pwm);
-      snprintf(teg_str, sizeof(teg_str), "TEG PWM: %d", disp_data->teg_pwm);
-      ips200_show_string(10, 180, fan_str);
-      ips200_show_string(10, 200, teg_str);
-      
-      // 释放内存
-      rt_free(disp_data);
+      else
+      {
+        // 没有新数据，释放互斥量
+        rt_mutex_release(display_mutex);
+      }
     }
 	}
 }
@@ -382,33 +397,37 @@ static void pid_thread_entry(void *parameter){
           rt_kprintf("PWM mailbox sent successfully!\n\r");
         }
 
-        // 发送数据到屏幕显示线程
-        display_data_t *disp_data = (display_data_t*)rt_malloc(sizeof(display_data_t));
-        if (disp_data != RT_NULL) {
-          // 复制温度数据
-          for (int i = 0; i < 8; i++) {
-            disp_data->temp_values[i] = received_temp->temp_data[i];
+        // 使用互斥量保护共享数据的访问
+          if(rt_mutex_take(display_mutex, RT_WAITING_FOREVER) == RT_EOK)
+          {
+            // 更新全局显示数据
+            // 复制温度数据
+            for (int i = 0; i < 8; i++) {
+              global_display_data.temp_values[i] = received_temp->temp_data[i];
+            }
+            // 设置PWM值
+            global_display_data.fan_pwm = fan_out;
+            global_display_data.teg_pwm = teg_out;
+            
+            // 标记数据已准备好
+            display_data_ready = RT_TRUE;
+            
+            // 释放互斥量
+            rt_mutex_release(display_mutex);
+            
+            rt_kprintf("Display data updated and mutex released!\n\r");
           }
-          // 设置PWM值
-          disp_data->fan_pwm = fan_out;
-          disp_data->teg_pwm = teg_out;
-          
-          // 发送到显示邮箱
-          if (rt_mb_send(display_mail, (rt_uint32_t)disp_data) != RT_EOK) {
-            rt_kprintf("Display mailbox send failed!\n\r");
-            rt_free(disp_data);
+          else
+          {
+            rt_kprintf("Failed to take display mutex!\n\r");
           }
-          else{
-            rt_kprintf("Display mailbox send successfully!\n\r");
-          }
-        }
 
-        // 释放温度数据内存
-        rt_free(received_temp);
       }
       else{
         rt_kprintf("PWM memory allocation failed!\n\r");
       }
+      // 释放温度数据内存
+      rt_free(received_temp);
 	  }
   }
 }
