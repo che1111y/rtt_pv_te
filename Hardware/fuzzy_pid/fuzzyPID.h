@@ -102,8 +102,8 @@ struct PID {
 #define control_mode position_mode
 
 #if control_mode == position_mode
-#define max_error 50.0f
-#define max_delta_error 20.0f
+#define max_error 30.0f
+#define max_delta_error 5.0f
 #else
 #define max_error 12.0f
 #define max_delta_error 12.0f

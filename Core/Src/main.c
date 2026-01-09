@@ -42,9 +42,9 @@ static  rt_thread_t scrn_thread = RT_NULL;
 static  rt_thread_t pid_thread = RT_NULL;
 static  rt_thread_t pwm_thread = RT_NULL;
 
-/* 定义邮箱控制块 */
-static rt_mailbox_t temp_mail = RT_NULL;
-static rt_mailbox_t pwm_mail = RT_NULL;
+/* 定义消息队列控制块 */
+static rt_mq_t temp_mq = RT_NULL;
+static rt_mq_t pwm_mq = RT_NULL;
 
 //任务
 static void adc_thread_entry(void *parameter);
@@ -118,19 +118,15 @@ int fputc(int ch, FILE *f)
   */
 int main(void)
 {
-  /* 创建temp邮箱 */
-  temp_mail = rt_mb_create("temp_mail", /* 邮箱名字 */
-                            20,         /* 邮箱大小 */
-                            RT_IPC_FLAG_FIFO);/* 信号量模式 FIFO(0x00)*/
-  if (temp_mail != RT_NULL)
-    rt_kprintf("Temperature data mailbox created successfully\n\r");
+  /* 1. 创建消息队列
+   * msg_size: sizeof(temp_data_t) = 32字节,
+   * max_msgs: 10 条
+   */
+  temp_mq = rt_mq_create("temp_mq", sizeof(temp_data_t), 10, RT_IPC_FLAG_FIFO);
+  if (temp_mq != RT_NULL) rt_kprintf("Temp MQ created\n\r");
 
-  /* 创建pwm邮箱 */
-  pwm_mail = rt_mb_create("pwm_mail", /* 邮箱名字 */
-                            20,         /* 邮箱大小 */
-                            RT_IPC_FLAG_FIFO);/* 信号量模式 FIFO(0x00)*/
-  if (pwm_mail != RT_NULL)
-    rt_kprintf("PWM data mailbox created successfully\n\r");
+  pwm_mq = rt_mq_create("pwm_mq", sizeof(pwm_data_t), 10, RT_IPC_FLAG_FIFO);
+  if (pwm_mq != RT_NULL) rt_kprintf("PWM MQ created\n\r");
 
   // 创建互斥量
   display_mutex = rt_mutex_create("disp_mutex", RT_IPC_FLAG_FIFO);
@@ -143,7 +139,7 @@ int main(void)
     rt_thread_create( "adc",               /* 线程名字 */        
                 adc_thread_entry,          /* 线程入口函数 */       
                 RT_NULL,                   /* 线程入口函数参数 */      
-                512,                       /* 线程栈大小 */        
+                1024,                       /* 线程栈大小 */        
                 2,                         /* 线程的优先级 */         
                 20);                       /* 线程时间片 */          
 	//开启线程调度
@@ -157,7 +153,7 @@ int main(void)
     rt_thread_create( "wifi",               /* 线程名字 */        
                 wifi_thread_entry,          /* 线程入口函数 */       
                 RT_NULL,                   /* 线程入口函数参数 */      
-                512,                       /* 线程栈大小 */        
+                1024,                       /* 线程栈大小 */        
                 3,                         /* 线程的优先级 */         
                 20);                       /* 线程时间片 */          
 	//开启线程调度
@@ -171,7 +167,7 @@ int main(void)
     rt_thread_create( "pwm",               /* 线程名字 */        
                 pwm_thread_entry,          /* 线程入口函数 */       
                 RT_NULL,                   /* 线程入口函数参数 */      
-                512,                       /* 线程栈大小 */        
+                1024,                       /* 线程栈大小 */        
                 0,                         /* 线程的优先级 */         
                 20);                       /* 线程时间片 */          
 	//开启线程调度
@@ -185,7 +181,7 @@ int main(void)
     rt_thread_create( "pid",               /* 线程名字 */        
                 pid_thread_entry,          /* 线程入口函数 */       
                 RT_NULL,                   /* 线程入口函数参数 */      
-                512,                       /* 线程栈大小 */        
+                2048,                       /* 线程栈大小 */        
                 1,                         /* 线程的优先级 */         
                 20);                       /* 线程时间片 */          
 	//开启线程调度
@@ -199,7 +195,7 @@ int main(void)
     rt_thread_create( "scrn",               /* 线程名字 */        
                 scrn_thread_entry,          /* 线程入口函数 */       
                 RT_NULL,              /* 线程入口函数参数 */      
-                512,                       /* 线程栈大小 */        
+                1024,                       /* 线程栈大小 */        
                 4,                         /* 线程的优先级 */         
                 20);                       /* 线程时间片 */          
 	//开启线程调度
@@ -259,17 +255,9 @@ void SystemClock_Config(void)
 //ADC
 static void adc_thread_entry(void *parameter)
 {
-  temp_data_t *temp_msg;
+  temp_data_t temp_local;
 	while(1)
 	{
-    // 分配内存用于存储温度数据
-    temp_msg = (temp_data_t*)rt_malloc(sizeof(temp_data_t));
-    if(temp_msg == RT_NULL)
-    {
-      rt_kprintf("Memory allocation failed!\n");
-      rt_thread_mdelay(100);
-      continue;
-    }
     for(int i=0;i<8;i++)
     {
       // rt_kprintf("adc0:%d\r\n",(int32_t)ADS1256_GetAdc(0<<4 | 0x08));
@@ -277,14 +265,13 @@ static void adc_thread_entry(void *parameter)
       // rt_kprintf("Voltage%d: %d.%dV\r\n",i, (int)V[i], (int)(V[i]*1000)%1000);
       // R[i] = Get_Rntc(i, 10);
       // rt_kprintf("Rntc%d: %d.%dO\r\n",i, (int)R[i], (int)(R[i]*100)%100);
-      temp_msg->temp_data[i] = GetAccuraryTemperature(Get_Rntc(i, 10));
-		  rt_kprintf("Temperature%d: %d.%dC\r\n",i, (int)temp_msg->temp_data[i], (int)(temp_msg->temp_data[i]*1000)%1000);
+      temp_local.temp_data[i] = GetAccuraryTemperature(Get_Rntc(i, 10));
+		  rt_kprintf("Temperature%d: %d.%dC\r\n",i, (int)temp_local.temp_data[i], (int)(temp_local.temp_data[i]*1000)%1000);
       // rt_thread_mdelay(20);
     }
-    if(rt_mb_send(temp_mail, (rt_uint32_t)temp_msg) != RT_EOK)
+    if(rt_mq_send(temp_mq, &temp_local, sizeof(temp_data_t)) != RT_EOK)
     {
-      rt_kprintf("ADC Mailbox send failed!\n");
-      rt_free(temp_msg);  // 发送失败时释放内存
+      rt_kprintf("Temp MQ Full!\n");
     }
     rt_thread_mdelay(50);
 	}
@@ -361,101 +348,86 @@ static void scrn_thread_entry(void *parameter)
 static void pid_thread_entry(void *parameter){
   rt_kprintf("PID thread started!\n\r");  // 添加启动确认信息
   
-  temp_data_t *received_temp;
-  rt_ubase_t msg;
-  pwm_data_t *pwm_msg;
+  temp_data_t received_temp;
+  pwm_data_t pwm_local;
 
 	while(1){
-    // 从邮箱接收温度数据
-    if(rt_mb_recv(temp_mail, &msg, RT_WAITING_FOREVER) == RT_EOK){
-      received_temp = (temp_data_t*)msg;
+    // 从消息队列接收数据
+    if(rt_mq_recv(temp_mq, &received_temp, sizeof(temp_data_t), RT_WAITING_FOREVER) == RT_EOK){
         
       // 使用接收到的温度数据进行PID计算
-      teg_out = fuzzy_pid_motor_pwd_output(received_temp->temp_data[0], idea_temp_cold, 
+      teg_out = fuzzy_pid_motor_pwd_output(received_temp.temp_data[0], idea_temp_cold, 
                                           direct[control_teg], fuzzy_pid_vector[control_teg]);
-      fan_out = pid_motor_pwd_output(received_temp->temp_data[1], idea_temp_hot, 
+      fan_out = pid_motor_pwd_output(received_temp.temp_data[1], idea_temp_hot, 
                                           direct[control_fan], fan_pid_vector[control_fan]); 
 
       rt_kprintf("fanOutput:%d,Real:%d.%d\n\r", (int)(fan_out), 
-                                                (int)received_temp->temp_data[1], 
-                                                (int)(received_temp->temp_data[1]*1000)%1000);
+                                                (int)received_temp.temp_data[1], 
+                                                (int)(received_temp.temp_data[1]*1000)%1000);
       rt_kprintf("tegOutput:%d,Real:%d.%d\n\r", (int)(teg_out), 
-                                                (int)received_temp->temp_data[0], 
-                                                (int)(received_temp->temp_data[0]*1000)%1000);
+                                                (int)received_temp.temp_data[0], 
+                                                (int)(received_temp.temp_data[0]*1000)%1000);
 
-      // 创建并发送PWM数据到pwm线程
-      pwm_msg = (pwm_data_t*)rt_malloc(sizeof(pwm_data_t));
-      if(pwm_msg != RT_NULL){
-        pwm_msg->fan_output = fan_out;
-        pwm_msg->teg_output = teg_out;
+      // 准备 PWM 数据
+      pwm_local.fan_output = fan_out;
+      pwm_local.teg_output = teg_out;
         
-        if(rt_mb_send(pwm_mail, (rt_uint32_t)pwm_msg) != RT_EOK){
-          rt_kprintf("PWM mailbox send failed!\n\r");
-          rt_free(pwm_msg);
-        }
-        else{
-          rt_kprintf("PWM mailbox sent successfully!\n\r");
-        }
-
-        // 使用互斥量保护共享数据的访问
-          if(rt_mutex_take(display_mutex, RT_WAITING_FOREVER) == RT_EOK)
-          {
-            // 更新全局显示数据
-            // 复制温度数据
-            for (int i = 0; i < 8; i++) {
-              global_display_data.temp_values[i] = received_temp->temp_data[i];
-            }
-            // 设置PWM值
-            global_display_data.fan_pwm = fan_out;
-            global_display_data.teg_pwm = teg_out;
-            
-            // 标记数据已准备好
-            display_data_ready = RT_TRUE;
-            
-            // 释放互斥量
-            rt_mutex_release(display_mutex);
-            
-            rt_kprintf("Display data updated and mutex released!\n\r");
-          }
-          else
-          {
-            rt_kprintf("Failed to take display mutex!\n\r");
-          }
-
+      // 发送 PWM 消息队列 
+      if(rt_mq_send(pwm_mq, &pwm_local, sizeof(pwm_data_t)) != RT_EOK){
+         rt_kprintf("PWM MQ Full!\n\r");
       }
-      else{
-        rt_kprintf("PWM memory allocation failed!\n\r");
+
+      // 使用互斥量保护共享数据的访问
+      if(rt_mutex_take(display_mutex, RT_WAITING_FOREVER) == RT_EOK)
+      {
+        // 更新全局显示数据
+        // 复制温度数据
+        for (int i = 0; i < 8; i++) {
+          global_display_data.temp_values[i] = received_temp.temp_data[i];
+        }
+        // 设置PWM值
+        global_display_data.fan_pwm = fan_out;
+        global_display_data.teg_pwm = teg_out;
+        
+        // 标记数据已准备好
+        display_data_ready = RT_TRUE;
+        
+        // 释放互斥量
+        rt_mutex_release(display_mutex);
+        
+        rt_kprintf("Display data updated and mutex released!\n\r");
       }
-      // 释放温度数据内存
-      rt_free(received_temp);
-	  }
-  }
+      else
+      {
+        rt_kprintf("Failed to take display mutex!\n\r");
+      }
+    }
+    else{
+      rt_kprintf("PWM memory allocation failed!\n\r");
+    }
+	}
 }
 
 static void pwm_thread_entry(void *parameter)
 {
-  pwm_data_t *pwm_data;
+  pwm_data_t pwm_recv; // 局部变量
   rt_ubase_t msg;
 
 	while(1)
 	{
     // 从邮箱接收PWM数据
-    if(rt_mb_recv(pwm_mail, &msg, RT_WAITING_FOREVER) == RT_EOK)
+    if(rt_mq_recv(pwm_mq, &pwm_recv, sizeof(pwm_data_t), RT_WAITING_FOREVER) == RT_EOK)
     {
-      pwm_data = (pwm_data_t*)msg;
-      
       // 使用接收到的PWM数据设置比较值
       // __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_1, pwm_data->fan_output);//min:14  max:50
       // __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_2, pwm_data->teg_output);//  
       __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_1, 32768);//min:32768  max:65535//绿电容
       __HAL_TIM_SetCompare(&htim3,TIM_CHANNEL_2, 32768);//  
 
-      // 释放内存
-      rt_free(pwm_data);
     }
     else
     {
-      rt_kprintf("PWM mailbox receive failed!\n\r");
+      rt_kprintf("PWM receive failed!\n\r");
     }
 	}
 }

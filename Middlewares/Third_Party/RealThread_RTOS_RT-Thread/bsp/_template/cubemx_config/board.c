@@ -102,7 +102,7 @@ void rt_hw_board_init(void)
     control_fan = 0; 
     control_teg = 0;
     idea_temp_cold = 20.0f;
-    idea_temp_hot = idea_temp_cold*1.2f;
+    idea_temp_hot = idea_temp_cold/**1.2f*/;
 
     // Default fuzzy rule base of delta kp/ki/kd
     int rule_base[][qf_default] = {
@@ -139,8 +139,8 @@ void rt_hw_board_init(void)
                                     1,  4,  8,  0,
                                     4,  8,  8,  0};
   // Default parameters of pid controller
-  float fuzzy_pid_params[DOF][pid_params_count] = {{2000.0f,   50.0f,     500,    5000,     0.1f, 0, 1},//kp, ki, kd, integral_limit, dead_zone, feed_forward,
-                                                   {4.0f,   0,     0,    5,     0.1f, 0, 1},
+  float fuzzy_pid_params[DOF][pid_params_count] = {{200.0f,   0.0f,     0,    5000,     0.1f, 0, 1},//kp, ki, kd, integral_limit, dead_zone, feed_forward,
+                                                   {4.0f,   0,     0,    0,     0.1f, 0, 1},
                                                    {1.1f,   0,     0,    0,     0,    0, 1},
                                                    {2.4f,   0,     0,    0,     0,    0, 1},
                                                    {1.2f,   0,     0,    0,     0,    0, 1},
@@ -149,7 +149,7 @@ void rt_hw_board_init(void)
   // Obtain the PID controller vector according to the parameters
   fuzzy_pid_vector = fuzzy_pid_vector_init(
                     fuzzy_pid_params,  
-                    1.0f, 
+                    2.0f, 
                     4, 
                     1, 
                     0, 
